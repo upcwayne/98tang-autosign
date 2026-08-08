@@ -473,7 +473,23 @@ class SignInManager:
             )
 
             if not question_text:
-                self.logger.info("未发现验证问题，尝试直接提交")
+                self.logger.info("未发现验证问题，等待签到AJAX完成...")
+                # 等待签到结果提示出现（toast / 成功消息等）
+                success_indicators = [
+                    "签到成功", "已签到", "获得奖励", "签到奖励",
+                    "连续签到", "sign success", "签到完毕"
+                ]
+                for i in range(10):  # 最多等 10 秒
+                    TimingManager.smart_wait(1.0, 0.5, self.logger)
+                    try:
+                        page_text = self.driver.execute_script("return document.body.innerText")
+                        for indicator in success_indicators:
+                            if indicator in page_text:
+                                self.logger.info(f"检测到签到成功提示: {indicator}")
+                                return True
+                    except Exception:
+                        pass
+                self.logger.warning("未检测到签到成功提示，但验证码检查通过，尝试继续")
                 return True
 
             self.logger.info(f"处理验证问题: {question_text}")
@@ -787,11 +803,15 @@ class SignInManager:
             try:
                 self.logger.info(f"验证签到状态 (第 {attempt + 1}/{max_retries} 次)")
 
-                # 刷新页面重新检查签到状态
-                self.driver.refresh()
-                TimingManager.smart_wait(
-                    TimingManager.PAGE_LOAD_DELAY, 1.0, self.logger
-                )
+                # 第一次检查不刷新页面，避免中断 AJAX 签到请求
+                if attempt > 0:
+                    self.driver.refresh()
+                    TimingManager.smart_wait(
+                        TimingManager.PAGE_LOAD_DELAY, 1.0, self.logger
+                    )
+                else:
+                    # 等待页面可能出现的签到结果
+                    TimingManager.smart_wait(2.0, 1.0, self.logger)
 
                 # 检查是否有系统繁忙提示
                 if self._check_system_busy():
