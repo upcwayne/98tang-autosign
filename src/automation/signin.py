@@ -841,7 +841,16 @@ class SignInManager:
                 elif signin_status == "need_signin":
                     self.logger.warning(f"签到状态仍显示未签到 (第 {attempt + 1} 次)")
                     if attempt < max_retries - 1:
-                        # 如果仍显示未签到，重新执行签到流程
+                        if attempt == 0:
+                            # attempt=0：AJAX 签到成功后按钮 DOM 可能未更新（Discuz! 特性），
+                            # 先刷新页面获取真实状态，避免基于过时 DOM 误判
+                            self.logger.info("首次检测到未签到，刷新页面获取最新状态...")
+                            self.driver.refresh()
+                            TimingManager.smart_wait(
+                                TimingManager.PAGE_LOAD_DELAY, 1.0, self.logger
+                            )
+                            continue
+                        # attempt>=1：刷新后仍显示未签到，重新执行签到流程
                         self.logger.info("重新执行签到流程...")
                         wait_time = (attempt + 1) * 2  # 等待时间：2秒、4秒、6秒
                         self.logger.info(f"等待 {wait_time} 秒后重新签到...")
