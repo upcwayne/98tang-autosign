@@ -1,0 +1,44 @@
+--- a/src/automation/signin.py
++++ b/src/automation/signin.py
+@@ -890,14 +890,22 @@
+         Returns:
+             是否检测到系统繁忙
+         """
+         try:
++            page_text = self.driver.page_source.lower()
++
++            # 先检查是否有签到成功标志，避免将签到成功页面的"请稍后再试"
++            # （如"签到成功，请稍后再试新任务"）误判为系统繁忙
++            success_signs = ["已签到", "签到成功", "恭喜你签到成功"]
++            for sign in success_signs:
++                if sign in page_text:
++                    self.logger.debug(f"检测到签到成功标志: {sign}，跳过系统繁忙检查")
++                    return False
++
+             # 检查常见的系统繁忙提示文本
+             busy_texts = [
+                 "系统繁忙",
+                 "请稍等重试",
+                 "系统繁忙,请稍等重试",
+                 "服务器繁忙",
+                 "请稍后再试",
+                 "系统维护中",
+             ]
+-
+-            page_text = self.driver.page_source.lower()
+ 
+             for busy_text in busy_texts:
+@@ -816,6 +824,13 @@
+                 # 检查是否有系统繁忙提示
+                 if self._check_system_busy():
+                     self.logger.warning(f"检测到系统繁忙提示 (第 {attempt + 1} 次)")
++                    # attempt=0 时不直接跳过签到状态检查，先确认是否实际已签到
++                    if attempt == 0:
++                        self.logger.info("首次检测到系统繁忙，先确认签到状态...")
++                        signin_status = self._check_signin_status()
++                        if signin_status == "already_signed":
++                            self.logger.info("✅ 签到验证成功，状态确认已签到")
++                            return True
+                     if attempt < max_retries - 1:
+                         wait_time = (attempt + 1) * 5  # 递增等待时间：5秒、10秒、15秒
+                         self.logger.info(f"等待 {wait_time} 秒后重试...")
