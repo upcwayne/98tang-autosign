@@ -11,3 +11,4 @@ setuptools  # 解决Python 3.12+的distutils问题
 
 # Chrome驱动自动管理
 webdriver-manager>=4.0.0
+（内容由AI生成，仅供参考）
