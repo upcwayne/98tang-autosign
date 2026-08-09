@@ -6,7 +6,14 @@
 
 import re
 import logging
+import base64
+import io
+import time
 from typing import Optional, Dict, Any
+
+import cv2
+import numpy as np
+import requests
 
 from ..browser.helpers import BrowserHelper
 from ..browser.element_finder import ElementFinder
@@ -35,7 +42,10 @@ class SignInManager:
         # 网站配置
         self.base_url = config.get("base_url", "https://www.sehuatang.org")
         self.home_url = self.base_url
-        self.sign_url = f"{self.base_url}/plugin.php?id=dsu_paulsign:sign"
+        self.sign_url = f"{self.base_url}/plugin.php?id=dd_sign"
+
+        # HTTP 会话（用于直接 API 调用，复用 Cookie）
+        self.http_session = requests.Session()
 
         # 认证配置
         self.username = config.get("username", "")
@@ -551,19 +561,21 @@ class SignInManager:
 
     def sign_in(self) -> bool:
         """
-        执行签到
+        执行签到（GoCaptcha 适配版）
+
+        流程：导航签到页 → 检查状态 → 获取 captcha → 滑块求解 → 提交验证 → 执行签到
 
         Returns:
             是否签到成功
         """
         try:
-            self.logger.info("开始签到流程")
+            self.logger.info("开始签到流程（GoCaptcha 适配版）")
 
             # 返回首页
             self.driver.get(self.home_url)
             TimingManager.smart_wait(TimingManager.PAGE_LOAD_DELAY, 1.0, self.logger)
 
-            # 尝试进入签到页面，最多重试3次
+            # 尝试进入签到页面
             if not self._navigate_to_signin_page():
                 self.logger.error("无法进入签到页面")
                 return False
@@ -575,14 +587,76 @@ class SignInManager:
                 self.logger.info("✅ 今日已签到")
                 return True
             elif signin_status == "need_signin":
-                self.logger.info("检测到未签到状态，开始执行签到")
-                # 继续执行签到流程
+                self.logger.info("检测到未签到状态，开始 GoCaptcha 验证流程")
             else:
                 self.logger.error("无法确定签到状态")
                 return False
 
-            # 执行签到操作
-            return self._perform_signin_action()
+            # 同步 Selenium Cookie 到 requests Session
+            self._sync_cookies_to_session()
+
+            # GoCaptcha 验证码 + 签到循环（最多 5 次尝试）
+            for attempt in range(5):
+                self.logger.info(f"GoCaptcha 验证尝试 (第 {attempt + 1}/5 次)")
+
+                # 1. 获取验证码配置
+                captcha_data = self._fetch_captcha()
+                if captcha_data is None:
+                    self.logger.error("获取验证码失败，终止签到")
+                    return False
+
+                captcha_type = captcha_data.get("type", "")
+                self.logger.info(f"验证码类型: {captcha_type}")
+
+                # 2. 只处理 slide 和 drag 类型（可用模板匹配）
+                if captcha_type not in ("slide", "drag"):
+                    self.logger.info(
+                        f"跳过 {captcha_type} 类型验证码（不支持自动求解），重试获取新验证码..."
+                    )
+                    time.sleep(1.0)
+                    continue
+
+                # 3. 求解滑块验证码
+                master_b64 = captcha_data.get("master_image_base64", "")
+                thumb_b64 = captcha_data.get("thumb_image_base64", "")
+
+                if not master_b64 or not thumb_b64:
+                    self.logger.warning("验证码图片数据不完整，重试")
+                    continue
+
+                coord = self._solve_slide_captcha(master_b64, thumb_b64)
+                if coord is None:
+                    self.logger.warning("滑块匹配失败，重试获取新验证码")
+                    time.sleep(1.0)
+                    continue
+
+                x, y = coord
+                self.logger.info(f"滑块匹配结果: x={x}, y={y}")
+
+                # 4. 提交验证码答案
+                if not self._submit_captcha(x, y):
+                    self.logger.warning("验证码提交失败或未通过，重试")
+                    time.sleep(1.0)
+                    continue
+
+                # 5. 执行签到
+                self.logger.info("验证码通过，执行签到...")
+                signin_result = self._do_signin_call()
+
+                if signin_result:
+                    self.logger.info("✅ 签到成功")
+                    # 刷新页面确认状态
+                    self.driver.refresh()
+                    TimingManager.smart_wait(
+                        TimingManager.PAGE_LOAD_DELAY, 1.0, self.logger
+                    )
+                    return True
+                else:
+                    self.logger.warning("签到接口返回失败，重试")
+                    time.sleep(1.0)
+
+            self.logger.error("GoCaptcha 验证重试次数已达上限，签到失败")
+            return False
 
         except Exception as e:
             self.logger.error(f"签到失败: {e}")
@@ -951,6 +1025,186 @@ class SignInManager:
         except Exception as e:
             self.logger.debug(f"检查系统繁忙状态时出错: {e}")
             return False
+
+    # ========== GoCaptcha 验证码 API 方法 ==========
+
+    def _sync_cookies_to_session(self):
+        """
+        将 Selenium WebDriver 的 Cookie 同步到 requests.Session，
+        使直接 HTTP 调用能复用登录态
+        """
+        try:
+            cookies = self.driver.get_cookies()
+            for cookie in cookies:
+                self.http_session.cookies.set(
+                    cookie["name"],
+                    cookie["value"],
+                    domain=cookie.get("domain", ""),
+                    path=cookie.get("path", "/"),
+                )
+            self.logger.debug(f"已同步 {len(cookies)} 个 Cookie 到 HTTP 会话")
+        except Exception as e:
+            self.logger.warning(f"同步 Cookie 失败: {e}")
+
+    def _fetch_captcha(self) -> Optional[Dict[str, Any]]:
+        """
+        GET misc.php?mod=captcha 获取验证码配置
+
+        Returns:
+            验证码数据字典（type, master_image_base64, thumb_image_base64 等）或 None
+        """
+        try:
+            url = f"{self.base_url}/misc.php?mod=captcha"
+            self.logger.debug(f"请求验证码: {url}")
+
+            resp = self.http_session.get(url, timeout=15)
+            data = resp.json()
+
+            code = data.get("code")
+            if code == 429:
+                self.logger.error("验证码配额已耗尽 (429)，今日无法继续签到")
+                return None
+            elif code != 200:
+                self.logger.warning(f"获取验证码返回非 200: code={code}, message={data.get('message', '')}")
+                return None
+
+            captcha_data = data.get("data", {})
+            self.logger.debug(f"获取验证码成功，类型: {captcha_data.get('type', 'unknown')}")
+            return captcha_data
+
+        except requests.RequestException as e:
+            self.logger.error(f"请求验证码网络错误: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"获取验证码异常: {e}")
+            return None
+
+    def _solve_slide_captcha(
+        self, master_image_base64: str, thumb_image_base64: str
+    ) -> Optional[tuple]:
+        """
+        使用 OpenCV 模板匹配求解 slide/drag 验证码
+
+        Args:
+            master_image_base64: 背景大图的 base64（可能含 data:image/png;base64, 前缀）
+            thumb_image_base64: 滑块小图的 base64
+
+        Returns:
+            (x, y) 坐标元组，匹配失败返回 None
+        """
+        try:
+            # 去除可能的 data:image 前缀
+            def decode_b64(b64_str: str) -> np.ndarray:
+                if "," in b64_str and b64_str.startswith("data:"):
+                    b64_str = b64_str.split(",", 1)[1]
+                img_bytes = base64.b64decode(b64_str)
+                img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                return img
+
+            master_img = decode_b64(master_image_base64)
+            thumb_img = decode_b64(thumb_image_base64)
+
+            if master_img is None or thumb_img is None:
+                self.logger.error("无法解码验证码图片")
+                return None
+
+            self.logger.debug(
+                f"模板匹配: master={master_img.shape}, thumb={thumb_img.shape}"
+            )
+
+            # 模板匹配
+            result = cv2.matchTemplate(master_img, thumb_img, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+            self.logger.debug(f"模板匹配置信度: {max_val:.4f}")
+
+            # 置信度阈值
+            if max_val < 0.5:
+                self.logger.warning(f"模板匹配置信度过低: {max_val:.4f}")
+                return None
+
+            x, y = max_loc
+            return (int(x), int(y))
+
+        except Exception as e:
+            self.logger.error(f"滑块匹配失败: {e}")
+            return None
+
+    def _submit_captcha(self, x: int, y: int) -> bool:
+        """
+        POST misc.php?mod=captcha&action=check 提交验证码答案
+
+        Args:
+            x: X 坐标
+            y: Y 坐标
+
+        Returns:
+            是否验证通过
+        """
+        try:
+            url = f"{self.base_url}/misc.php?mod=captcha&action=check"
+            body = f"{x},{y}"
+            self.logger.debug(f"提交验证码答案: {body}")
+
+            resp = self.http_session.post(
+                url,
+                data=body,
+                headers={"Content-Type": "text/plain"},
+                timeout=15,
+            )
+
+            result = resp.json()
+            self.logger.debug(f"验证码提交结果: {result}")
+
+            if result.get("data") == "ok":
+                self.logger.info("验证码验证通过")
+                return True
+            else:
+                self.logger.warning(
+                    f"验证码验证失败: {result.get('data', result.get('message', '未知错误'))}"
+                )
+                return False
+
+        except requests.RequestException as e:
+            self.logger.error(f"提交验证码网络错误: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"提交验证码异常: {e}")
+            return False
+
+    def _do_signin_call(self) -> bool:
+        """
+        GET plugin.php?id=dd_sign&ac=sign_v2 执行签到
+
+        Returns:
+            是否签到成功（code=200）
+        """
+        try:
+            url = f"{self.base_url}/plugin.php?id=dd_sign&ac=sign_v2"
+            self.logger.debug(f"执行签到请求: {url}")
+
+            resp = self.http_session.get(url, timeout=15)
+            data = resp.json()
+
+            code = data.get("code")
+            message = data.get("message", "")
+
+            if code == 200:
+                self.logger.info(f"签到成功: {message}")
+                return True
+            else:
+                self.logger.warning(f"签到失败: code={code}, message={message}")
+                return False
+
+        except requests.RequestException as e:
+            self.logger.error(f"签到请求网络错误: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"签到请求异常: {e}")
+            return False
+
+    # ========== 以下为旧版方法（保留但不再被主流程调用） ==========
 
     def _find_submit_button(self):
         """
