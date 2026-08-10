@@ -2,7 +2,7 @@
 
 # 98tang AutoSign
 
-**智能化98堂论坛自动签到系统 | 支持云端部署 | 拟人化操作**
+**智能化98堂论坛自动化工具 | 支持云端部署 | 拟人化操作**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT) [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/) [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-supported-green.svg)](https://github.com/features/actions) [![Selenium](https://img.shields.io/badge/Selenium-4.15+-orange.svg)](https://selenium-python.readthedocs.io/) 
 [![GitHub stars](https://img.shields.io/github/stars/WizisCool/98tang-autosign?style=social)](https://github.com/WizisCool/98tang-autosign/stargazers) [![GitHub forks](https://img.shields.io/github/forks/WizisCool/98tang-autosign?style=social)](https://github.com/WizisCool/98tang-autosign/network/members)
@@ -125,7 +125,7 @@ python main.py
 - 🔐 **基础配置**: 账号信息、网站设置
 - 🛡️ **安全提问**: 安全验证配置  
 - 📱 **Telegram通知**: 消息推送、文件发送
-- 🤖 **拟人化行为**: 智能回复、浏览行为
+- 🤖 **拟人化行为**: 智能回复、浏览行为（签到功能已移除）
 - ⚡ **高级设置**: 性能调优、调试选项
 
 > **详细配置文档**: [configuration.md](docs/configuration.md)  

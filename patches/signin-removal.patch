@@ -1,0 +1,112 @@
+﻿diff --git a/README.md b/README.md
+index fadf2a8..40de775 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ # 98tang AutoSign
+ 
+-**智能化98堂论坛自动签到系统 | 支持云端部署 | 拟人化操作**
++**智能化98堂论坛自动化工具 | 支持云端部署 | 拟人化操作**
+ 
+ [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT) [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/) [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-supported-green.svg)](https://github.com/features/actions) [![Selenium](https://img.shields.io/badge/Selenium-4.15+-orange.svg)](https://selenium-python.readthedocs.io/) 
+ [![GitHub stars](https://img.shields.io/github/stars/WizisCool/98tang-autosign?style=social)](https://github.com/WizisCool/98tang-autosign/stargazers) [![GitHub forks](https://img.shields.io/github/forks/WizisCool/98tang-autosign?style=social)](https://github.com/WizisCool/98tang-autosign/network/members)
+@@ -125,7 +125,7 @@ python main.py
+ - 🔐 **基础配置**: 账号信息、网站设置
+ - 🛡️ **安全提问**: 安全验证配置  
+ - 📱 **Telegram通知**: 消息推送、文件发送
+-- 🤖 **拟人化行为**: 智能回复、浏览行为
++- 🤖 **拟人化行为**: 智能回复、浏览行为（签到功能已移除）
+ - ⚡ **高级设置**: 性能调优、调试选项
+ 
+ > **详细配置文档**: [configuration.md](docs/configuration.md)  
+diff --git a/config.env.example b/config.env.example
+index fd49074..556234b 100644
+--- a/config.env.example
++++ b/config.env.example
+@@ -31,8 +31,8 @@ SITE_PASSWORD=your_password
+ # 网站地址（通常不需要修改）
+ BASE_URL=https://www.sehuatang.org
+ 
+-# 是否启用签到功能
+-ENABLE_CHECKIN=true
++# 是否启用签到功能（已移除：GoCaptcha 验证码无法可靠自动化，默认禁用）
++ENABLE_CHECKIN=false
+ 
+ # 是否启用安全提问处理（如果你的账号设置了安全提问，请设为true）
+ ENABLE_SECURITY_QUESTION=false
+diff --git a/src/core/app.py b/src/core/app.py
+index 88d2543..3fbf419 100644
+--- a/src/core/app.py
++++ b/src/core/app.py
+@@ -482,40 +482,17 @@ class AutoSignApp:
+ 
+     def _perform_signin(self) -> bool:
+         """
+-        执行签到
++        签到（已移除）
++
++        GoCaptcha 验证码无法可靠自动化，签到功能已从主流程中移除。
++        此方法保留为存根，始终返回 True 以确保回帖和随机浏览不受影响。
+ 
+         Returns:
+-            是否签到成功
++            始终返回 True（签到功能已移除，不影响整体流程）
+         """
+-        if not self.config_manager.get("enable_checkin", True):
+-            self.logger.info("签到功能已禁用")
+-            self._record_task_result("signin", True, "签到功能已禁用，跳过执行")
+-            return True
+-
+-        try:
+-            self.logger.info("开始执行签到")
+-
+-            if self.signin_manager.sign_in():
+-                self.logger.info("签到完成")
+-                self._record_task_result("signin", True, "签到执行成功")
+-                return True
+-            else:
+-                error_msg = "签到失败"
+-                self.logger.error(error_msg)
+-                self._record_task_result("signin", False, "签到执行失败")
+-
+-                # 注意：这里不发送错误通知，由run()方法统一处理
+-
+-                return False
+-
+-        except Exception as e:
+-            error_msg = f"签到过程出错: {e}"
+-            self.logger.error(error_msg)
+-            self._record_task_result("signin", False, "签到过程出错", str(e))
+-
+-            # 注意：这里不发送错误通知，由run()方法统一处理
+-
+-            return False
++        self.logger.info("签到功能已移除（GoCaptcha 无法可靠自动化），跳过执行")
++        self._record_task_result("signin", True, "签到功能已移除，跳过执行")
++        return True
+ 
+     def run(self) -> bool:
+         """
+@@ -623,7 +600,7 @@ class AutoSignApp:
+         self.logger.debug(f"  - 用户名: {self.config_manager.get('username')}")
+         self.logger.debug(f"  - 无头模式: {self.config_manager.get('headless')}")
+         self.logger.debug(
+-            f"  - 签到功能: {'启用' if self.config_manager.get('enable_checkin') else '禁用'}"
++            f"  - 签到功能: 已移除（GoCaptcha 无法可靠自动化）"
+         )
+         self.logger.debug(
+             f"  - 拟人化活动: {'启用' if self.config_manager.get('enable_humanlike') else '禁用'}"
+diff --git a/src/core/config.py b/src/core/config.py
+index dff4491..0522b48 100644
+--- a/src/core/config.py
++++ b/src/core/config.py
+@@ -107,7 +107,7 @@ class ConfigManager:
+         # 功能开关
+         self._config.update(
+             {
+-                "enable_checkin": os.getenv("ENABLE_CHECKIN", "true").lower() == "true",
++                "enable_checkin": os.getenv("ENABLE_CHECKIN", "false").lower() == "true",
+                 "timing_multiplier": float(os.getenv("TIMING_MULTIPLIER", "1.0")),
+                 "enable_smart_timing": os.getenv("ENABLE_SMART_TIMING", "true").lower()
+                 == "true",

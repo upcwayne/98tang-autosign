@@ -482,40 +482,17 @@ class AutoSignApp:
 
     def _perform_signin(self) -> bool:
         """
-        执行签到
+        签到（已移除）
+
+        GoCaptcha 验证码无法可靠自动化，签到功能已从主流程中移除。
+        此方法保留为存根，始终返回 True 以确保回帖和随机浏览不受影响。
 
         Returns:
-            是否签到成功
+            始终返回 True（签到功能已移除，不影响整体流程）
         """
-        if not self.config_manager.get("enable_checkin", True):
-            self.logger.info("签到功能已禁用")
-            self._record_task_result("signin", True, "签到功能已禁用，跳过执行")
-            return True
-
-        try:
-            self.logger.info("开始执行签到")
-
-            if self.signin_manager.sign_in():
-                self.logger.info("签到完成")
-                self._record_task_result("signin", True, "签到执行成功")
-                return True
-            else:
-                error_msg = "签到失败"
-                self.logger.error(error_msg)
-                self._record_task_result("signin", False, "签到执行失败")
-
-                # 注意：这里不发送错误通知，由run()方法统一处理
-
-                return False
-
-        except Exception as e:
-            error_msg = f"签到过程出错: {e}"
-            self.logger.error(error_msg)
-            self._record_task_result("signin", False, "签到过程出错", str(e))
-
-            # 注意：这里不发送错误通知，由run()方法统一处理
-
-            return False
+        self.logger.info("签到功能已移除（GoCaptcha 无法可靠自动化），跳过执行")
+        self._record_task_result("signin", True, "签到功能已移除，跳过执行")
+        return True
 
     def run(self) -> bool:
         """
@@ -623,7 +600,7 @@ class AutoSignApp:
         self.logger.debug(f"  - 用户名: {self.config_manager.get('username')}")
         self.logger.debug(f"  - 无头模式: {self.config_manager.get('headless')}")
         self.logger.debug(
-            f"  - 签到功能: {'启用' if self.config_manager.get('enable_checkin') else '禁用'}"
+            f"  - 签到功能: 已移除（GoCaptcha 无法可靠自动化）"
         )
         self.logger.debug(
             f"  - 拟人化活动: {'启用' if self.config_manager.get('enable_humanlike') else '禁用'}"

@@ -107,7 +107,7 @@ class ConfigManager:
         # 功能开关
         self._config.update(
             {
-                "enable_checkin": os.getenv("ENABLE_CHECKIN", "true").lower() == "true",
+                "enable_checkin": os.getenv("ENABLE_CHECKIN", "false").lower() == "true",
                 "timing_multiplier": float(os.getenv("TIMING_MULTIPLIER", "1.0")),
                 "enable_smart_timing": os.getenv("ENABLE_SMART_TIMING", "true").lower()
                 == "true",
