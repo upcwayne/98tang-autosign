@@ -1,13 +1,13 @@
-﻿# 鏍稿績渚濊禆
+# 核心依赖
 selenium>=4.15.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
 requests>=2.31.0
 opencv-python-headless>=4.8.0
 
-# 澧炲己鍙嶆娴?undetected-chromedriver>=3.5.5
-setuptools  # 瑙ｅ喅Python 3.12+鐨刣istutils闂
+# 增强反检测
+undetected-chromedriver>=3.5.5
+setuptools  # 解决Python 3.12+的distutils问题
 
-# Chrome椹卞姩鑷姩绠＄悊
+# Chrome驱动自动管理
 webdriver-manager>=4.0.0
-锛堝唴瀹圭敱AI鐢熸垚锛屼粎渚涘弬鑰冿級
